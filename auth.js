@@ -1,217 +1,136 @@
 auth.js
 
-// AFTERHOURS ACCOUNT SYSTEM
 
 document.addEventListener("DOMContentLoaded", () => {
-  if (typeof supabaseClient === "undefined") {
+  const client = window.supabaseClient || window.supabase;
+
+  if (!client || !client.auth) {
     console.error("Supabase is not connected. Check supabase-config.js");
     return;
   }
 
-  const db = supabaseClient;
+  const oldButton = document.getElementById("accountBtn");
+  if (oldButton) oldButton.remove();
 
-  // Account button
-  const accountButton = document.createElement("button");
-  accountButton.textContent = "👤 Account";
-  accountButton.style.cssText = `
-    position:fixed;right:22px;top:20px;z-index:9998;
-    padding:12px 20px;border:1px solid #168cff;
-    border-radius:12px;background:#09264a;color:white;
-    cursor:pointer;font-weight:bold;
-  `;
-  document.body.appendChild(accountButton);
-
-  // Account window
-  const modal = document.createElement("div");
-  modal.style.cssText = `
-    display:none;position:fixed;inset:0;z-index:9999;
-    background:rgba(0,0,0,.85);align-items:center;
-    justify-content:center;padding:20px;
-  `;
-
-  modal.innerHTML = `
-    <div style="
-      background:#091a31;color:white;padding:28px;
-      border:1px solid #168cff;border-radius:18px;
-      width:100%;max-width:390px;font-family:Arial;
-      box-shadow:0 0 35px #087bff55;
-    ">
-      <button id="ahClose" style="
-        float:right;background:none;border:0;
-        color:white;font-size:23px;cursor:pointer;
-      ">×</button>
-
-      <h2 style="color:#45b7ff;margin-top:5px">AfterHours Account</h2>
-      <p id="ahStatus" style="color:#a9c9e8">Sign in or create an account.</p>
-
-      <input id="ahName" placeholder="Display name (for signup)" style="
-        display:block;width:100%;box-sizing:border-box;
-        padding:13px;margin:12px 0;background:#102b4b;
-        border:1px solid #245b8c;border-radius:9px;color:white;
-      ">
-
-      <input id="ahEmail" type="email" placeholder="Email address" style="
-        display:block;width:100%;box-sizing:border-box;
-        padding:13px;margin:12px 0;background:#102b4b;
-        border:1px solid #245b8c;border-radius:9px;color:white;
-      ">
-
-      <input id="ahPassword" type="password" placeholder="Password" style="
-        display:block;width:100%;box-sizing:border-box;
-        padding:13px;margin:12px 0;background:#102b4b;
-        border:1px solid #245b8c;border-radius:9px;color:white;
-      ">
-
-      <button id="ahSignup" style="
-        width:100%;padding:13px;margin-top:10px;
-        background:#087bff;color:white;border:0;
-        border-radius:9px;font-weight:bold;cursor:pointer;
-      ">Create Account</button>
-
-      <button id="ahLogin" style="
-        width:100%;padding:13px;margin-top:10px;
-        background:#12375e;color:white;border:1px solid #168cff;
-        border-radius:9px;font-weight:bold;cursor:pointer;
-      ">Log In</button>
-
-      <button id="ahLogout" style="
-        display:none;width:100%;padding:13px;margin-top:10px;
-        background:#762c43;color:white;border:0;
-        border-radius:9px;cursor:pointer;
-      ">Log Out</button>
-    </div>
-  `;
-
-  document.body.appendChild(modal);
-
-  const $ = id => document.getElementById(id);
-  const status = $("ahStatus");
-
-  function showMessage(message) {
-    status.textContent = message;
-  }
-
-  accountButton.addEventListener("click", () => {
-    modal.style.display = "flex";
-  });
-
-  $("ahClose").addEventListener("click", () => {
-    modal.style.display = "none";
-  });
-
-  modal.addEventListener("click", event => {
-    if (event.target === modal) modal.style.display = "none";
-  });
-
-  async function refreshAccount() {
-    const { data: { user } } = await db.auth.getUser();
-
-    if (user) {
-      const { data: profile } = await db
-        .from("profiles")
-        .select("display_name")
-        .eq("id", user.id)
-        .maybeSingle();
-
-      const name =
-        profile?.display_name ||
-        user.user_metadata?.display_name ||
-        user.email;
-
-      accountButton.textContent = "👤 " + name;
-      showMessage("Logged in as " + name);
-      $("ahName").style.display = "none";
-      $("ahSignup").style.display = "none";
-      $("ahLogin").style.display = "none";
-      $("ahLogout").style.display = "block";
-    } else {
-      accountButton.textContent = "👤 Account";
-      showMessage("Sign in or create an account.");
-      $("ahName").style.display = "block";
-      $("ahSignup").style.display = "block";
-      $("ahLogin").style.display = "block";
-      $("ahLogout").style.display = "none";
+  const style = document.createElement("style");
+  style.textContent = `
+    .ah-auth-overlay {
+      position: fixed; inset: 0; z-index: 99999;
+      background: rgba(0,0,0,.8);
+      display: flex; align-items: center; justify-content: center;
+      padding: 20px;
     }
-  }
-
-  // Create account
-  $("ahSignup").addEventListener("click", async () => {
-    const name = $("ahName").value.trim();
-    const email = $("ahEmail").value.trim();
-    const password = $("ahPassword").value;
-
-    if (!name || !email || password.length < 6) {
-      showMessage("Enter a name, email, and password of at least 6 characters.");
-      return;
+    .ah-auth-box {
+      background: #101b35; color: white; padding: 28px;
+      border: 1px solid #258cff; border-radius: 18px;
+      width: 100%; max-width: 390px;
+      font-family: Arial, sans-serif;
     }
+    .ah-auth-box h2 { color: #42baff; }
+    .ah-auth-box input {
+      box-sizing: border-box; width: 100%; padding: 12px;
+      margin: 8px 0; border-radius: 8px;
+      border: 1px solid #345477; background: #071226;
+      color: white;
+    }
+    .ah-auth-box button {
+      padding: 12px; margin: 5px 3px; border: 0;
+      border-radius: 8px; cursor: pointer;
+      background: #168cff; color: white; font-weight: bold;
+    }
+    .ah-auth-box .secondary { background: #263b5c; }
+    #ahAuthMessage { color: #8ed2ff; overflow-wrap: anywhere; }
+  `;
+  document.head.appendChild(style);
 
-    showMessage("Creating your account...");
+  const button = document.createElement("button");
+  button.textContent = "Account / Login";
+  button.style.cssText =
+    "position:fixed;right:20px;top:20px;z-index:9999;padding:11px 17px;border:0;border-radius:9px;background:#168cff;color:white;font-weight:bold;cursor:pointer";
+  document.body.appendChild(button);
 
-    const { data, error } = await db.auth.signUp({
-      email,
-      password,
-      options: {
-        data: { display_name: name }
+  let overlay;
+
+  function showLogin() {
+    if (overlay) overlay.remove();
+
+    overlay = document.createElement("div");
+    overlay.className = "ah-auth-overlay";
+    overlay.innerHTML = `
+      <div class="ah-auth-box">
+        <h2>AfterHours Account</h2>
+        <p>Sign in or create your account.</p>
+        <input id="ahEmail" type="email" placeholder="Email address" autocomplete="email">
+        <input id="ahPassword" type="password" placeholder="Password (at least 6 characters)" autocomplete="current-password">
+        <input id="ahName" type="text" placeholder="Display name (for signup)">
+        <div>
+          <button id="ahSignup">Create account</button>
+          <button id="ahLogin">Log in</button>
+        </div>
+        <button id="ahLogout" class="secondary" style="display:none">Log out</button>
+        <button id="ahClose" class="secondary">Close</button>
+        <p id="ahAuthMessage"></p>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+
+    const message = overlay.querySelector("#ahAuthMessage");
+    const email = overlay.querySelector("#ahEmail");
+    const password = overlay.querySelector("#ahPassword");
+    const name = overlay.querySelector("#ahName");
+    const signup = overlay.querySelector("#ahSignup");
+    const login = overlay.querySelector("#ahLogin");
+    const logout = overlay.querySelector("#ahLogout");
+
+    overlay.querySelector("#ahClose").onclick = () => overlay.remove();
+
+    signup.onclick = async () => {
+      if (!email.value || password.value.length < 6) {
+        message.textContent = "Enter an email and a password with at least 6 characters.";
+        return;
       }
-    });
 
-    if (error) {
-      showMessage(error.message);
-      return;
-    }
+      message.textContent = "Creating account...";
 
-    if (data.session) {
-      showMessage("Account created! Welcome to AfterHours.");
-    } else {
-      showMessage("Account created! Check your email to confirm your account before logging in.");
-    }
+      const { data, error } = await client.auth.signUp({
+        email: email.value.trim(),
+        password: password.value,
+        options: {
+          data: { display_name: name.value.trim() || "Player" }
+        }
+      });
 
-    await refreshAccount();
-  });
+      message.textContent = error
+        ? error.message
+        : data.session
+          ? "Account created! You're logged in."
+          : "Account created! Check your email to confirm it.";
+    };
 
-  // Log in
-  $("ahLogin").addEventListener("click", async () => {
-    const email = $("ahEmail").value.trim();
-    const password = $("ahPassword").value;
+    login.onclick = async () => {
+      message.textContent = "Logging in...";
+      const { error } = await client.auth.signInWithPassword({
+        email: email.value.trim(),
+        password: password.value
+      });
+      message.textContent = error ? error.message : "You're logged in!";
+    };
 
-    if (!email || !password) {
-      showMessage("Enter your email and password.");
-      return;
-    }
+    logout.onclick = async () => {
+      const { error } = await client.auth.signOut();
+      message.textContent = error ? error.message : "Logged out.";
+      logout.style.display = "none";
+    };
 
-    showMessage("Logging in...");
+    (async () => {
+      const { data } = await client.auth.getSession();
+      if (data.session) {
+        message.textContent = "Logged in as " + data.session.user.email;
+        logout.style.display = "inline-block";
+      }
+    })();
+  }
 
-    const { error } = await db.auth.signInWithPassword({
-      email,
-      password
-    });
-
-    if (error) {
-      showMessage(error.message);
-      return;
-    }
-
-    showMessage("Welcome back!");
-    await refreshAccount();
-  });
-
-  // Log out
-  $("ahLogout").addEventListener("click", async () => {
-    const { error } = await db.auth.signOut();
-
-    if (error) {
-      showMessage(error.message);
-      return;
-    }
-
-    $("ahPassword").value = "";
-    showMessage("You have logged out.");
-    await refreshAccount();
-  });
-
-  db.auth.onAuthStateChange(() => {
-    refreshAccount();
-  });
-
-  refreshAccount();
+  button.onclick = showLogin;
 });
+
